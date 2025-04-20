@@ -1,8 +1,10 @@
 import axios from 'axios';
+
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 const api = axios.create({
   baseURL: API_URL,
 });
+
 export interface FileItem {
   id: string;
   file: string;
@@ -17,6 +19,7 @@ export interface FileItem {
   version: number;
   duplicate_detected?: boolean;
 }
+
 export interface FileStats {
   total_files: number;
   unique_files: number;
@@ -25,6 +28,7 @@ export interface FileStats {
   storage_saved: number;
   storage_efficiency: string;
 }
+
 export interface FileFilters {
   searchQuery?: string;
   fileTypes?: string[];
@@ -34,13 +38,22 @@ export interface FileFilters {
   endDate?: string | null;
   unique_only?: boolean;
 }
+
 export interface DownloadParams {
   fileUrl: string;
   filename: string;
 }
+
 export interface UploadResponse extends FileItem {
   duplicate_detected?: boolean;
 }
+
+export interface DuplicatesResponse {
+  original_file: FileItem;
+  duplicate_count: number;
+  duplicates: FileItem[];
+}
+
 export const fileService = {
   getFiles: async (filters: FileFilters): Promise<FileItem[]> => {
     const params: Record<string, any> = {};
@@ -73,6 +86,12 @@ export const fileService = {
     });
     return response.data;
   },
+  
+  getFileDuplicates: async (fileId: string): Promise<DuplicatesResponse> => {
+    const response = await api.get(`/files/${fileId}/duplicates/`);
+    return response.data;
+  },
+  
   uploadFile: async (file: File): Promise<UploadResponse> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -83,10 +102,12 @@ export const fileService = {
     });
     return response.data;
   },
+  
   deleteFile: async (id: string): Promise<string> => {
     await api.delete(`/files/${id}/`);
     return id;
   },
+  
   downloadFile: async (fileUrl: string, filename: string): Promise<DownloadParams> => {
     const response = await axios.get(fileUrl, {
       responseType: 'blob',
@@ -100,6 +121,7 @@ export const fileService = {
     document.body.removeChild(link);
     return { fileUrl, filename };
   },
+  
   getFileStats: async (): Promise<FileStats> => {
     const response = await api.get('/files/stats/');
     return response.data;
