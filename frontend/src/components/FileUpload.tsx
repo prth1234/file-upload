@@ -11,6 +11,9 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { fileService } from '../services/fileService';
 
+// Add some icons for better visuals
+import { Upload, File, FileCheck, AlertCircle } from 'lucide-react';
+
 interface FileUploadProps {
   onUploadSuccess: () => void;
 }
@@ -30,19 +33,17 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadSuccess }) => {
     mutationFn: fileService.uploadFile,
     onMutate: () => {
       setIsUploading(true);
-      // Reset any previous alerts
       setShowSuccessMessage(false);
       setIsDuplicateDetected(false);
     },
     onSuccess: (data) => {
       if (data.duplicate_detected) {
         setIsDuplicateDetected(true);
-        setShowSuccessMessage(false); // Ensure success message is not shown for duplicates
+        setShowSuccessMessage(false);
       } else {
         setIsDuplicateDetected(false);
-        setShowSuccessMessage(true); // Show success message only for non-duplicates
+        setShowSuccessMessage(true);
         
-        // Auto-hide success message after 5 seconds
         setTimeout(() => {
           setShowSuccessMessage(false);
         }, 5000);
@@ -58,7 +59,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadSuccess }) => {
       
       onUploadSuccess();
       
-      // Auto-hide duplicate message after 5 seconds
       if (data.duplicate_detected) {
         setTimeout(() => {
           setIsDuplicateDetected(false);
@@ -80,7 +80,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadSuccess }) => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setSelectedFile(e.target.files[0]);
-      // Reset alerts when a new file is selected
       setIsDuplicateDetected(false);
       setShowSuccessMessage(false);
     }
@@ -107,7 +106,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadSuccess }) => {
     setShowDropIndicator(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       setSelectedFile(e.dataTransfer.files[0]);
-      // Reset alerts when a new file is dropped
       setIsDuplicateDetected(false);
       setShowSuccessMessage(false);
     }
@@ -131,16 +129,49 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadSuccess }) => {
     }
   };
   
-  // Handle duplicate alert dismissal
   const handleDuplicateAlertDismiss = () => {
     setIsDuplicateDetected(false);
-    // Important: Do not show success message after dismissing duplicate alert
     setShowSuccessMessage(false);
   };
   
-  const boxClassName = isDragging 
-    ? "file-upload-box dragging" 
-    : "file-upload-box";
+  // Custom CSS styles as inline styles
+  const dropZoneStyle: React.CSSProperties = {
+    border: isDragging 
+      ? '2px dashed #0972d3' // AWS Cloudscape primary blue when dragging
+      : '2px dashed #adb5bd', // Lighter gray when not dragging
+    borderRadius: '8px',
+    padding: '32px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: isDragging ? 'rgba(9, 114, 211, 0.05)' : '#f8f9fa',
+    transition: 'all 0.2s ease',
+    cursor: 'pointer',
+    minHeight: '180px',
+  };
+  
+  const iconStyle: React.CSSProperties = {
+    marginBottom: '16px',
+    color: isDragging ? '#0972d3' : '#495057'
+  };
+  
+  const textStyle: React.CSSProperties = {
+    color: '#495057',
+    marginBottom: '8px'
+  };
+  
+  const linkStyle: React.CSSProperties = {
+    color: '#0972d3',
+    fontWeight: 500,
+    cursor: 'pointer',
+    textDecoration: 'none'
+  };
+  
+  const infoTextStyle: React.CSSProperties = {
+    color: '#6c757d',
+    fontSize: '14px'
+  };
   
   return (
     <Container>
@@ -167,55 +198,73 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadSuccess }) => {
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                style={{ width: '100%', cursor: 'pointer' }}
+                style={{ width: '100%' }}
+                onClick={handleSelectFile}
               >
-                <Box
-                  padding="xl"
-                  textAlign="center"
-                  className={boxClassName}
-                >
-                  <SpaceBetween size="xs">
-                    <div>
-                      Drag and drop here or{' '}
-                      <Button 
-                        onClick={() => handleSelectFile()} 
-                        variant="link"
-                      >
-                        select a file
-                      </Button>
-                    </div>
-                    {showDropIndicator && (
-                      <StatusIndicator type="info">Drop to upload</StatusIndicator>
+                <div style={dropZoneStyle}>
+                  {/* Show different icons based on state */}
+                  {isDragging ? (
+                    <FileCheck size={48} style={iconStyle} />
+                  ) : (
+                    <Upload size={48} style={iconStyle} />
+                  )}
+                  
+                  <div style={textStyle}>
+                    {isDragging ? (
+                      <strong>Drop file here</strong>
+                    ) : (
+                      <>
+                        <strong>Drag &amp; drop your file here</strong>
+                      </>
                     )}
-                  </SpaceBetween>
-                </Box>
+                  </div>
+                  
+                  {!isDragging && (
+                    <div style={infoTextStyle}>
+                      or <span style={linkStyle}>browse</span> to select a file
+                    </div>
+                  )}
+                  
+                  {showDropIndicator && isDragging && (
+                    <StatusIndicator type="info">Ready to drop</StatusIndicator>
+                  )}
+                </div>
               </div>
+              
               {selectedFile && (
                 <Alert type="info">
-                  Selected file: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(2)} KB)
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <File size={20} />
+                    <span>
+                      <strong>{selectedFile.name}</strong> ({(selectedFile.size / 1024).toFixed(2)} KB)
+                    </span>
+                  </div>
                 </Alert>
               )}
+              
               <Button
                 disabled={!selectedFile || isUploading || uploadMutation.isPending}
                 onClick={() => handleUpload()}
                 loading={isUploading || uploadMutation.isPending}
                 variant="primary"
+                iconName="upload"
               >
-                Upload
+                Upload file
               </Button>
               
-              {/* Only show success message when appropriate */}
               {showSuccessMessage && !isDuplicateDetected && (
                 <Alert 
                   type="success"
                   dismissible
                   onDismiss={() => setShowSuccessMessage(false)}
                 >
-                  File uploaded successfully!
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <FileCheck size={20} />
+                    <span>File uploaded successfully!</span>
+                  </div>
                 </Alert>
               )}
               
-              {/* Duplicate alert - don't show success message when this is visible */}
               {isDuplicateDetected && (
                 <Alert
                   type="warning"
@@ -223,7 +272,13 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadSuccess }) => {
                   dismissible
                   onDismiss={handleDuplicateAlertDismiss}
                 >
-                  This file already exists in the system. A duplicate record has been created that references the existing file to save storage space.
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <AlertCircle size={20} />
+                    <span>
+                      This file already exists in the system. A duplicate record has been 
+                      created that references the existing file to save storage space.
+                    </span>
+                  </div>
                 </Alert>
               )}
               
@@ -233,7 +288,12 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadSuccess }) => {
                   dismissible
                   onDismiss={() => uploadMutation.reset()}
                 >
-                  Error uploading file: {(uploadMutation.error as Error)?.message || "Server error occurred"}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <AlertCircle size={20} />
+                    <span>
+                      Error uploading file: {(uploadMutation.error as Error)?.message || "Server error occurred"}
+                    </span>
+                  </div>
                 </Alert>
               )}
             </SpaceBetween>
