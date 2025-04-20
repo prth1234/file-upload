@@ -12,8 +12,9 @@ import {
   ExpandableSection,
 } from '@cloudscape-design/components';
 import { FileFilters } from '../services/fileService';
+import { ActiveFilters } from './ActiveFilters';
 
-interface SearchPanelProps {
+interface SearchPanelProps {    
   onSearch: (filters: FileFilters) => void;
   initialFilters?: FileFilters;
 }
@@ -27,8 +28,30 @@ interface DateValue {
   value: string;
 }
 
+const STORAGE_KEY = 'fileFilters';
+const EXPANDED_STATE_KEY = 'advancedFiltersExpanded';
+
 export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, initialFilters }) => {
-  const [searchQuery, setSearchQuery] = useState<string>(initialFilters?.searchQuery || '');
+  // Initialize expanded state from localStorage
+  const [isExpanded, setIsExpanded] = useState<boolean>(() => {
+    const savedState = localStorage.getItem(EXPANDED_STATE_KEY);
+    return savedState ? JSON.parse(savedState) : false;
+  });
+
+  // Save expanded state to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem(EXPANDED_STATE_KEY, JSON.stringify(isExpanded));
+  }, [isExpanded]);
+
+  // Initialize state from localStorage or initialFilters
+  const [searchQuery, setSearchQuery] = useState<string>(() => {
+    const savedFilters = localStorage.getItem(STORAGE_KEY);
+    if (savedFilters) {
+      const parsed = JSON.parse(savedFilters);
+      return parsed.searchQuery || initialFilters?.searchQuery || '';
+    }
+    return initialFilters?.searchQuery || '';
+  });
 
   const fileTypeOptions: FileTypeOption[] = [
     { label: 'PDF Document', value: 'application/pdf' },
@@ -43,18 +66,58 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, initialFilte
   ];
 
   const [selectedFileType, setSelectedFileType] = useState<FileTypeOption | null>(() => {
+    const savedFilters = localStorage.getItem(STORAGE_KEY);
+    if (savedFilters) {
+      const parsed = JSON.parse(savedFilters);
+      if (parsed.fileTypes?.length) {
+        const type = parsed.fileTypes[0];
+        const option = fileTypeOptions.find(opt => opt.value === type || opt.value.endsWith(`/${type}`));
+        return option || { label: type, value: type };
+      }
+    }
     if (initialFilters?.fileTypes?.length) {
-      const type = initialFilters.fileTypes[0]; // take only first for single select
+      const type = initialFilters.fileTypes[0];
       const option = fileTypeOptions.find(opt => opt.value === type || opt.value.endsWith(`/${type}`));
       return option || { label: type, value: type };
     }
     return null;
   });
 
-  const [minSize, setMinSize] = useState<string>(initialFilters?.minSize ? String(initialFilters.minSize / 1024) : '');
-  const [maxSize, setMaxSize] = useState<string>(initialFilters?.maxSize ? String(initialFilters.maxSize / 1024) : '');
-  const [startDate, setStartDate] = useState<DateValue | null>(initialFilters?.startDate ? { value: initialFilters.startDate } : null);
-  const [endDate, setEndDate] = useState<DateValue | null>(initialFilters?.endDate ? { value: initialFilters.endDate } : null);
+  const [minSize, setMinSize] = useState<string>(() => {
+    const savedFilters = localStorage.getItem(STORAGE_KEY);
+    if (savedFilters) {
+      const parsed = JSON.parse(savedFilters);
+      return parsed.minSize ? String(parsed.minSize / 1024) : '';
+    }
+    return initialFilters?.minSize ? String(initialFilters.minSize / 1024) : '';
+  });
+
+  const [maxSize, setMaxSize] = useState<string>(() => {
+    const savedFilters = localStorage.getItem(STORAGE_KEY);
+    if (savedFilters) {
+      const parsed = JSON.parse(savedFilters);
+      return parsed.maxSize ? String(parsed.maxSize / 1024) : '';
+    }
+    return initialFilters?.maxSize ? String(initialFilters.maxSize / 1024) : '';
+  });
+
+  const [startDate, setStartDate] = useState<DateValue | null>(() => {
+    const savedFilters = localStorage.getItem(STORAGE_KEY);
+    if (savedFilters) {
+      const parsed = JSON.parse(savedFilters);
+      return parsed.startDate ? { value: parsed.startDate } : null;
+    }
+    return initialFilters?.startDate ? { value: initialFilters.startDate } : null;
+  });
+
+  const [endDate, setEndDate] = useState<DateValue | null>(() => {
+    const savedFilters = localStorage.getItem(STORAGE_KEY);
+    if (savedFilters) {
+      const parsed = JSON.parse(savedFilters);
+      return parsed.endDate ? { value: parsed.endDate } : null;
+    }
+    return initialFilters?.endDate ? { value: initialFilters.endDate } : null;
+  });
 
   const handleSearch = useCallback(() => {
     const filters: FileFilters = {
@@ -66,6 +129,10 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, initialFilte
       endDate: endDate?.value || null,
       unique_only: initialFilters?.unique_only || false
     };
+    
+    // Save filters to localStorage
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(filters));
+    
     onSearch(filters);
   }, [searchQuery, selectedFileType, minSize, maxSize, startDate, endDate, onSearch, initialFilters?.unique_only]);
 
@@ -73,23 +140,28 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, initialFilte
     handleSearch();
   }, [searchQuery, selectedFileType, minSize, maxSize, startDate, endDate, handleSearch]);
 
-  useEffect(() => {
-    if (initialFilters) {
-      if (initialFilters.searchQuery !== undefined) setSearchQuery(initialFilters.searchQuery);
-      if (initialFilters.minSize !== undefined && initialFilters.minSize !== null)
-        setMinSize(String(initialFilters.minSize / 1024));
-      if (initialFilters.maxSize !== undefined && initialFilters.maxSize !== null)
-        setMaxSize(String(initialFilters.maxSize / 1024));
-      if (initialFilters.startDate) setStartDate({ value: initialFilters.startDate });
-      if (initialFilters.endDate) setEndDate({ value: initialFilters.endDate });
-
-      if (initialFilters.fileTypes?.length) {
-        const type = initialFilters.fileTypes[0];
-        const option = fileTypeOptions.find(opt => opt.value === type || opt.value.endsWith(`/${type}`));
-        setSelectedFileType(option || { label: type, value: type });
-      }
+  const handleRemoveFilter = (filterKey: keyof FileFilters, value: any) => {
+    switch (filterKey) {
+      case 'searchQuery':
+        setSearchQuery('');
+        break;
+      case 'fileTypes':
+        setSelectedFileType(null);
+        break;
+      case 'minSize':
+        setMinSize('');
+        break;
+      case 'maxSize':
+        setMaxSize('');
+        break;
+      case 'startDate':
+        setStartDate(null);
+        break;
+      case 'endDate':
+        setEndDate(null);
+        break;
     }
-  }, [initialFilters]);
+  };
 
   const handleClearFilters = () => {
     setSearchQuery('');
@@ -98,6 +170,9 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, initialFilte
     setMaxSize('');
     setStartDate(null);
     setEndDate(null);
+
+    // Clear localStorage
+    localStorage.removeItem(STORAGE_KEY);
 
     onSearch({
       searchQuery: '',
@@ -108,6 +183,16 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, initialFilte
       endDate: null,
       unique_only: initialFilters?.unique_only || false
     });
+  };
+
+  const currentFilters: FileFilters = {
+    searchQuery,
+    fileTypes: selectedFileType ? [selectedFileType.value] : [],
+    minSize: minSize ? parseInt(minSize) * 1024 : null,
+    maxSize: maxSize ? parseInt(maxSize) * 1024 : null,
+    startDate: startDate?.value || null,
+    endDate: endDate?.value || null,
+    unique_only: initialFilters?.unique_only || false
   };
 
   return (
@@ -128,31 +213,37 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, initialFilte
           </Box>
         </Grid>
 
-        <ExpandableSection headerText="Advanced filters">
+        <ActiveFilters filters={currentFilters} onRemoveFilter={handleRemoveFilter} />
+
+        <ExpandableSection 
+          headerText="Advanced filters"
+          expanded={isExpanded}
+          onChange={({ detail }) => setIsExpanded(detail.expanded)}
+        >
           <SpaceBetween size="l">
-          <FormField label="File type">
-  <Select
-    selectedOption={selectedFileType}
-    onChange={({ detail }) => {
-      if (detail.selectedOption.value === "" || 
-          (selectedFileType && detail.selectedOption.value === selectedFileType.value)) {
-        setSelectedFileType(null);
-      } else {
-        setSelectedFileType(detail.selectedOption as FileTypeOption);
-      }
-    }}
-    options={[
-      { 
-        label: "No selection",
-        value: "",
-        description: "Select a file type"
-      },
-      ...fileTypeOptions
-    ]}
-    placeholder="Select a file type"
-    selectedAriaLabel="Selected"
-  />
-</FormField>
+            <FormField label="File type">
+              <Select
+                selectedOption={selectedFileType}
+                onChange={({ detail }) => {
+                  if (detail.selectedOption.value === "" || 
+                      (selectedFileType && detail.selectedOption.value === selectedFileType.value)) {
+                    setSelectedFileType(null);
+                  } else {
+                    setSelectedFileType(detail.selectedOption as FileTypeOption);
+                  }
+                }}
+                options={[
+                  { 
+                    label: "No selection",
+                    value: "",
+                    description: "Select a file type"
+                  },
+                  ...fileTypeOptions
+                ]}
+                placeholder="Select a file type"
+                selectedAriaLabel="Selected"
+              />
+            </FormField>
 
             <Grid gridDefinition={[{ colspan: 6 }, { colspan: 6 }]}>
               <FormField label="Min size (KB)">
