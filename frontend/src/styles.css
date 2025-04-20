@@ -1,0 +1,13 @@
+.dragging-box {
+    border-radius: 4px;
+    border-style: dashed;
+    border-color: blue;
+    border-width: 2px;
+  }
+  
+  .default-box {
+    border-radius: 4px;
+    border-style: dotted;
+    border-color: grey;
+    border-width: 2px;
+  }
