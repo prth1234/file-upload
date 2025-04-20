@@ -7,7 +7,10 @@ import {
   Container,
   Tabs,
   Badge,
-  BreadcrumbGroup
+  BreadcrumbGroup,
+  Toggle,
+  TopNavigation,
+  Box
 } from '@cloudscape-design/components';
 import '@cloudscape-design/global-styles/index.css';
 import { FileUpload } from './components/FileUpload';
@@ -20,7 +23,6 @@ import './styles.css';
 function App() {
   const [refreshKey, setRefreshKey] = useState<number>(0);
   const [activeTabId, setActiveTabId] = useState<string>(() => {
-    // Initialize from localStorage, default to 'files' if not set
     return localStorage.getItem('activeTab') || 'files';
   });
   const [searchFilters, setSearchFilters] = useState<FileFilters>({
@@ -31,11 +33,25 @@ function App() {
     startDate: null,
     endDate: null
   });
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    // Check localStorage for saved preference, default to false
+    return localStorage.getItem('darkMode') === 'true' || false;
+  });
 
   // Save active tab to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem('activeTab', activeTabId);
   }, [activeTabId]);
+
+  // Save dark mode preference to localStorage and apply to body class
+  useEffect(() => {
+    localStorage.setItem('darkMode', darkMode.toString());
+    if (darkMode) {
+      document.body.classList.add('awsui-dark-mode');
+    } else {
+      document.body.classList.remove('awsui-dark-mode');
+    }
+  }, [darkMode]);
 
   const handleUploadSuccess = () => {
     setRefreshKey(prev => prev + 1);
@@ -61,6 +77,12 @@ function App() {
                 description="Secure file management with deduplication"
                 actions={
                   <SpaceBetween direction="horizontal" size="xs">
+                    <Toggle
+                      checked={darkMode}
+                      onChange={({ detail }) => setDarkMode(detail.checked)}
+                    >
+                      Dark Mode
+                    </Toggle>
                   </SpaceBetween>
                 }
               >

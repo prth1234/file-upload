@@ -8,11 +8,12 @@ import {
   Pagination,
   TextFilter,
   Header,
-  ButtonDropdown,
-  Toggle
+  Toggle,
+  Modal
 } from '@cloudscape-design/components';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fileService, FileItem, FileFilters } from '../services/fileService';
+import { TbDatabaseSearch } from "react-icons/tb";
 
 interface FileListProps {
   filters: FileFilters;
@@ -24,6 +25,8 @@ export const FileList: React.FC<FileListProps> = ({ filters, onFiltersChange }) 
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [selectedItems, setSelectedItems] = useState<FileItem[]>([]);
   const [showUniqueOnly, setShowUniqueOnly] = useState<boolean>(false);
+  const [showDuplicatesModal, setShowDuplicatesModal] = useState<boolean>(false);
+  const [selectedOriginalFile, setSelectedOriginalFile] = useState<string | null>(null);
   const pageSize = 10;
 
   const updatedFilters = {
@@ -36,11 +39,26 @@ export const FileList: React.FC<FileListProps> = ({ filters, onFiltersChange }) 
     queryFn: () => fileService.getFiles(updatedFilters),
   });
 
+  // Query for duplicates of a specific file
+  const { 
+    data: duplicatesData, 
+    isLoading: duplicatesLoading,
+    error: duplicatesError,
+    refetch: refetchDuplicates
+  } = useQuery({
+    queryKey: ['fileDuplicates', selectedOriginalFile],
+    queryFn: () => selectedOriginalFile ? fileService.getFileDuplicates(selectedOriginalFile) : null,
+    enabled: !!selectedOriginalFile, // Only run when we have a selected file
+  });
+
   const deleteMutation = useMutation({
     mutationFn: fileService.deleteFile,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['files'] });
       queryClient.invalidateQueries({ queryKey: ['fileStats'] });
+      if (selectedOriginalFile) {
+        queryClient.invalidateQueries({ queryKey: ['fileDuplicates', selectedOriginalFile] });
+      }
       setSelectedItems([]);
     },
   });
@@ -80,6 +98,11 @@ export const FileList: React.FC<FileListProps> = ({ filters, onFiltersChange }) 
     } catch (err) {
       console.error('Delete selected error:', err);
     }
+  };
+
+  const handleViewDuplicates = (fileId: string) => {
+    setSelectedOriginalFile(fileId);
+    setShowDuplicatesModal(true);
   };
 
   const formatFileSize = (bytes: number): string => {
@@ -139,7 +162,19 @@ export const FileList: React.FC<FileListProps> = ({ filters, onFiltersChange }) 
             {
               id: 'type',
               header: 'Type',
-              cell: (item: FileItem) => item.file_type,
+              cell: (item: FileItem) => (
+                <div
+                  title={item.file_type}
+                  style={{
+                    maxWidth: '200px',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {item.file_type}
+                </div>
+              ),
               sortingField: 'file_type'
             },
             {
@@ -182,6 +217,15 @@ export const FileList: React.FC<FileListProps> = ({ filters, onFiltersChange }) 
                     ariaLabel="Delete"
                     data-testid="delete-button"
                   />
+                  {/* Fixed the icon component issue */}
+                  {!item.is_duplicate && (
+                    <Button
+                      onClick={() => handleViewDuplicates(item.id)}
+                      variant="icon"
+                      iconName="search"
+                      ariaLabel="View duplicates"
+                    />
+                  )}
                 </SpaceBetween>
               )
             }
@@ -235,6 +279,104 @@ export const FileList: React.FC<FileListProps> = ({ filters, onFiltersChange }) 
           }
         />
       </SpaceBetween>
+
+      {/* Modal for displaying duplicate files */}
+      <Modal
+        visible={showDuplicatesModal}
+        onDismiss={() => {
+          setShowDuplicatesModal(false);
+          setSelectedOriginalFile(null);
+        }}
+        header="All duplicates"
+        size="large"
+      >
+        <Box>
+          {duplicatesLoading ? (
+            <Box textAlign="center" padding="l">
+              <StatusIndicator type="loading">Loading duplicates...</StatusIndicator>
+            </Box>
+          ) : duplicatesError ? (
+            <Box textAlign="center" color="text-status-error" padding="l">
+              <StatusIndicator type="error">
+                Error loading duplicates. Please try again.
+              </StatusIndicator>
+            </Box>
+          ) : duplicatesData ? (
+            <SpaceBetween size="l">
+              {/* Original file information */}
+              <Box variant="h4">
+                Original File: {duplicatesData.original_file?.original_filename}
+              </Box>
+              <Box variant="p">
+                Found {duplicatesData.duplicate_count} duplicate entries of this file.
+              </Box>
+
+              {/* List of duplicates */}
+              <Table
+                columnDefinitions={[
+                  {
+                    id: 'filename',
+                    header: 'File Name',
+                    cell: (item: FileItem) => item.original_filename,
+                  },
+                  {
+                    id: 'version',
+                    header: 'Version',
+                    cell: (item: FileItem) => `v${item.version || 1}`,
+                  },
+                  {
+                    id: 'uploaded',
+                    header: 'Upload Date',
+                    cell: (item: FileItem) => new Date(item.uploaded_at).toLocaleString(),
+                  },
+                  {
+                    id: 'actions',
+                    header: 'Actions',
+                    cell: (item: FileItem) => (
+                      <SpaceBetween direction="horizontal" size="xs">
+                        <Button
+                          onClick={() => handleDownload(item.file, item.original_filename)}
+                          iconName="download"
+                          variant="icon"
+                          ariaLabel="Download"
+                        />
+                        <Button
+                          onClick={() => {
+                            handleDelete(item.id);
+                            if (duplicatesData.duplicates.length === 1) {
+                              setShowDuplicatesModal(false);
+                            } else {
+                              // Refetch after deletion
+                              refetchDuplicates();
+                            }
+                          }}
+                          iconName="remove"
+                          variant="icon"
+                          ariaLabel="Delete"
+                        />
+                      </SpaceBetween>
+                    )
+                  }
+                ]}
+                items={duplicatesData.duplicates || []}
+                header={<Header>Duplicate Files</Header>}
+                empty={
+                  <Box textAlign="center" color="inherit" padding="l">
+                    <b>No duplicates found</b>
+                    <Box variant="p" color="inherit">
+                      This file has no duplicates.
+                    </Box>
+                  </Box>
+                }
+              />
+            </SpaceBetween>
+          ) : (
+            <Box textAlign="center" padding="l">
+              No duplicate information available.
+            </Box>
+          )}
+        </Box>
+      </Modal>
     </>
   );
 };

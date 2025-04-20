@@ -145,7 +145,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadSuccess }) => {
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: isDragging ? 'rgba(9, 114, 211, 0.05)' : '#f8f9fa',
+    backgroundColor: isDragging ? 'rgba(9, 114, 211, 0.05)' : 'transparent',
     transition: 'all 0.2s ease',
     cursor: 'pointer',
     minHeight: '180px',

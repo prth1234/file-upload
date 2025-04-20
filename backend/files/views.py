@@ -62,6 +62,7 @@ class FileViewSet(viewsets.ModelViewSet):
         if search:
             queryset = queryset.filter(original_filename__icontains=search)
         
+        # Collect all file types from both parameter formats
         file_types = []
         
         file_type_list = self.request.query_params.getlist('file_type')
@@ -72,17 +73,62 @@ class FileViewSet(viewsets.ModelViewSet):
         if file_type_array:
             file_types.extend(file_type_array)
         
+        # If we have file types, build a proper OR query
         if file_types:
             file_type_q = Q()
             for ft in file_types:
                 if '/' in ft:
+                    # For full MIME types like 'application/pdf'
+                    file_type_q |= Q(file_type__icontains=ft)
+                    # Also add the subtype for more flexibility
                     subtype = ft.split('/')[-1]
                     file_type_q |= Q(file_type__icontains=subtype)
                 else:
+                    # For partial types like just 'pdf'
                     file_type_q |= Q(file_type__icontains=ft)
+            
             queryset = queryset.filter(file_type_q)
         
         return queryset
+    
+
+    @action(detail=True, methods=['get'])
+    def duplicates(self, request, pk=None):
+        """
+        Retrieve all duplicate files that reference this original file.
+        Only works if the file is an original (non-duplicate) file.
+        """
+        try:
+            original_file = self.get_object()
+            
+            if original_file.is_duplicate:
+                # If this is a duplicate, redirect to its original
+                if original_file.original_file:
+                    return Response({
+                        'error': 'This is a duplicate file itself',
+                        'original_file_id': original_file.original_file.id
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                else:
+                    return Response({
+                        'error': 'This is a duplicate file but has no reference to an original'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Find all duplicates that reference this original file
+            duplicates = File.objects.filter(original_file=original_file)
+            serializer = self.get_serializer(duplicates, many=True)
+            
+            return Response({
+                'original_file': self.get_serializer(original_file).data,
+                'duplicate_count': duplicates.count(),
+                'duplicates': serializer.data
+            })
+            
+        except Exception as e:
+            logger.error(f"Error retrieving file duplicates: {str(e)}")
+            return Response(
+                {'error': f'Error retrieving file duplicates: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     def create(self, request, *args, **kwargs):
         """
