@@ -30,16 +30,21 @@ class File(models.Model):
     original_file = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='duplicates')
     reference_count = models.IntegerField(default=1)
     
+    # Field for versioning
+    version = models.IntegerField(default=1)
+    
     class Meta:
         ordering = ['-uploaded_at']
         indexes = [
             models.Index(fields=['file_type']),
             models.Index(fields=['size']),
             models.Index(fields=['uploaded_at']),
+            models.Index(fields=['file_hash']),
+            models.Index(fields=['is_duplicate']),
         ]
     
     def __str__(self):
-        return self.original_filename
+        return f"{self.original_filename} (v{self.version})"
     
     @property
     def storage_saved(self):

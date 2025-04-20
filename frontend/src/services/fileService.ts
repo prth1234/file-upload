@@ -17,6 +17,8 @@ export interface FileItem {
   reference_count: number;
   original_file: string | null;
   storage_saved: number;
+  version: number;
+  duplicate_detected?: boolean;
 }
 
 export interface FileStats {
@@ -35,11 +37,17 @@ export interface FileFilters {
   maxSize?: number | null;
   startDate?: string | null;
   endDate?: string | null;
+  unique_only?: boolean;
+  hardFilter?: boolean;
 }
 
 export interface DownloadParams {
   fileUrl: string;
   filename: string;
+}
+
+export interface UploadResponse extends FileItem {
+  duplicate_detected?: boolean;
 }
 
 export const fileService = {
@@ -71,12 +79,20 @@ export const fileService = {
       params.end_date = filters.endDate;
     }
     
+    if (filters?.unique_only) {
+      params.unique_only = true;
+    }
+    
+    if (filters?.hardFilter) {
+      params.hard_filter = true;
+    }
+    
     const response = await api.get('/files/', { params });
     return response.data;
   },
 
   // Upload a file
-  uploadFile: async (file: File) => {
+  uploadFile: async (file: File): Promise<UploadResponse> => {
     const formData = new FormData();
     formData.append('file', file);
     

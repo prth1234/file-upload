@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   AppLayout,
   ContentLayout,
@@ -16,9 +16,13 @@ import { FileStats } from './components/FileStats';
 import { SearchPanel } from './components/SearchPanel';
 import { FileFilters } from './services/fileService';
 import './styles.css';
+
 function App() {
   const [refreshKey, setRefreshKey] = useState<number>(0);
-  const [activeTabId, setActiveTabId] = useState<string>('files');
+  const [activeTabId, setActiveTabId] = useState<string>(() => {
+    // Initialize from localStorage, default to 'files' if not set
+    return localStorage.getItem('activeTab') || 'files';
+  });
   const [searchFilters, setSearchFilters] = useState<FileFilters>({
     searchQuery: '',
     fileTypes: [],
@@ -27,6 +31,11 @@ function App() {
     startDate: null,
     endDate: null
   });
+
+  // Save active tab to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('activeTab', activeTabId);
+  }, [activeTabId]);
 
   const handleUploadSuccess = () => {
     setRefreshKey(prev => prev + 1);
@@ -52,7 +61,6 @@ function App() {
                 description="Secure file management with deduplication"
                 actions={
                   <SpaceBetween direction="horizontal" size="xs">
-                    <Badge color="blue">beta</Badge>
                   </SpaceBetween>
                 }
               >
