@@ -21,23 +21,41 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadSuccess }) => {
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [isDuplicateDetected, setIsDuplicateDetected] = useState<boolean>(false);
   const [showDropIndicator, setShowDropIndicator] = useState<boolean>(false);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [showSuccessMessage, setShowSuccessMessage] = useState<boolean>(false);
   
   const queryClient = useQueryClient();
   
   const uploadMutation = useMutation({
     mutationFn: fileService.uploadFile,
+    onMutate: () => {
+      setIsUploading(true);
+      // Reset any previous alerts
+      setShowSuccessMessage(false);
+      setIsDuplicateDetected(false);
+    },
     onSuccess: (data) => {
       if (data.duplicate_detected) {
         setIsDuplicateDetected(true);
+        setShowSuccessMessage(false); // Ensure success message is not shown for duplicates
       } else {
         setIsDuplicateDetected(false);
+        setShowSuccessMessage(true); // Show success message only for non-duplicates
+        
+        // Auto-hide success message after 5 seconds
+        setTimeout(() => {
+          setShowSuccessMessage(false);
+        }, 5000);
       }
+      
       setSelectedFile(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+      
       queryClient.invalidateQueries({ queryKey: ['files'] });
       queryClient.invalidateQueries({ queryKey: ['fileStats'] });
+      
       onUploadSuccess();
       
       // Auto-hide duplicate message after 5 seconds
@@ -46,20 +64,25 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadSuccess }) => {
           setIsDuplicateDetected(false);
         }, 5000);
       }
+      
+      setIsUploading(false);
     },
     onError: (error) => {
       console.error('Upload error:', error);
-      // Ensure we reset any pending state
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+      setIsUploading(false);
+      setShowSuccessMessage(false);
     }
   });
   
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setSelectedFile(e.target.files[0]);
+      // Reset alerts when a new file is selected
       setIsDuplicateDetected(false);
+      setShowSuccessMessage(false);
     }
   };
   
@@ -84,16 +107,20 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadSuccess }) => {
     setShowDropIndicator(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       setSelectedFile(e.dataTransfer.files[0]);
+      // Reset alerts when a new file is dropped
       setIsDuplicateDetected(false);
+      setShowSuccessMessage(false);
     }
   }, []);
   
   const handleUpload = async () => {
-    if (selectedFile) {
+    if (selectedFile && !isUploading) {
       try {
+        setIsUploading(true);
         await uploadMutation.mutateAsync(selectedFile);
       } catch (error) {
         console.error('Upload error:', error);
+        setIsUploading(false);
       }
     }
   };
@@ -104,7 +131,13 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadSuccess }) => {
     }
   };
   
-  // Cloudscape-compatible class names based on drag state
+  // Handle duplicate alert dismissal
+  const handleDuplicateAlertDismiss = () => {
+    setIsDuplicateDetected(false);
+    // Important: Do not show success message after dismissing duplicate alert
+    setShowSuccessMessage(false);
+  };
+  
   const boxClassName = isDragging 
     ? "file-upload-box dragging" 
     : "file-upload-box";
@@ -112,7 +145,12 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadSuccess }) => {
   return (
     <Container>
       <SpaceBetween size="l">
-        <form onSubmit={(e) => { e.preventDefault(); handleUpload(); }}>
+        <form onSubmit={(e) => { 
+          e.preventDefault(); 
+          if (!isUploading) {
+            handleUpload(); 
+          }
+        }}>
           <FormField
             label="Upload file"
             description="Select or drag a file to upload"
@@ -158,28 +196,37 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUploadSuccess }) => {
                 </Alert>
               )}
               <Button
-                disabled={!selectedFile || uploadMutation.isPending}
+                disabled={!selectedFile || isUploading || uploadMutation.isPending}
                 onClick={() => handleUpload()}
-                loading={uploadMutation.isPending}
+                loading={isUploading || uploadMutation.isPending}
                 variant="primary"
               >
                 Upload
               </Button>
-              {uploadMutation.isSuccess && !isDuplicateDetected && (
-                <Alert type="success">
+              
+              {/* Only show success message when appropriate */}
+              {showSuccessMessage && !isDuplicateDetected && (
+                <Alert 
+                  type="success"
+                  dismissible
+                  onDismiss={() => setShowSuccessMessage(false)}
+                >
                   File uploaded successfully!
                 </Alert>
               )}
+              
+              {/* Duplicate alert - don't show success message when this is visible */}
               {isDuplicateDetected && (
                 <Alert
                   type="warning"
                   header="Duplicate file detected"
                   dismissible
-                  onDismiss={() => setIsDuplicateDetected(false)}
+                  onDismiss={handleDuplicateAlertDismiss}
                 >
                   This file already exists in the system. A duplicate record has been created that references the existing file to save storage space.
                 </Alert>
               )}
+              
               {uploadMutation.isError && (
                 <Alert
                   type="error"

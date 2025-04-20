@@ -85,6 +85,9 @@ class FileViewSet(viewsets.ModelViewSet):
         return queryset
 
     def create(self, request, *args, **kwargs):
+        """
+        Handle file upload with duplicate detection and prevention of double entries.
+        """
         try:
             file_obj = request.FILES.get('file')
             if not file_obj:
@@ -114,38 +117,128 @@ class FileViewSet(viewsets.ModelViewSet):
                 file_size = 0
                 logger.warning("Could not determine file size, defaulting to 0")
             
-            # Check for existing file outside transaction
-            existing_file = None
-            try:
-                existing_file = File.objects.filter(file_hash=file_hash, is_duplicate=False).first()
-            except OperationalError as e:
-                if "database is locked" in str(e).lower():
-                    logger.warning("Database locked during duplicate check, retrying with delay")
-                    time.sleep(0.5)  # Wait briefly and retry
-                    existing_file = File.objects.filter(file_hash=file_hash, is_duplicate=False).first()
-                else:
-                    raise
+            # Added lock detection for all database operations
+            def execute_with_retry(func, max_retries=3):
+                """Helper to execute functions with retry on database lock"""
+                retry_count = 0
+                while retry_count < max_retries:
+                    try:
+                        return func()
+                    except OperationalError as e:
+                        if "database is locked" in str(e).lower() and retry_count < max_retries - 1:
+                            retry_count += 1
+                            sleep_time = 0.5 * (2 ** retry_count)  # Exponential backoff
+                            logger.warning(f"Database locked, retrying in {sleep_time} seconds (attempt {retry_count+1}/{max_retries})")
+                            time.sleep(sleep_time)
+                        else:
+                            raise
+                raise Exception(f"Failed after {max_retries} attempts")
+                
+            # Check for existing file with same hash
+            existing_file = execute_with_retry(
+                lambda: File.objects.filter(file_hash=file_hash, is_duplicate=False).first()
+            )
             
-            # Use smaller transactions
-            if existing_file:
-                # Handle duplicate file case
+            # Get highest version for filename
+            highest_version = execute_with_retry(
+                lambda: File.objects.filter(original_filename=file_obj.name).order_by('-version').values_list('version', flat=True).first() or 0
+            )
+            
+            with transaction.atomic():
+                if existing_file:
+                    # This is a duplicate file
+                    logger.info(f"Duplicate file detected: {file_obj.name} matches hash of existing file {existing_file.id}")
+                    
+                    # Update reference count on original file
+                    existing_file.reference_count = existing_file.reference_count + 1
+                    existing_file.save()
+                    
+                    # Create a new entry that references the original file
+                    new_file = File(
+                        file=existing_file.file,  # Reference to existing file's storage
+                        original_filename=file_obj.name,
+                        file_type=content_type,
+                        size=file_size,
+                        file_hash=file_hash,
+                        is_duplicate=True,  # Mark as duplicate
+                        original_file=existing_file,  # Reference to original
+                        version=highest_version + 1
+                    )
+                    new_file.save()
+                    
+                    serializer = self.get_serializer(new_file)
+                    data = serializer.data
+                    data['duplicate_detected'] = True
+                    
+                    return Response(data, status=status.HTTP_201_CREATED)
+                else:
+                    # This is a new unique file
+                    logger.info(f"New unique file uploaded: {file_obj.name}")
+                    
+                    # Create new file record
+                    new_file = File(
+                        file=file_obj,
+                        original_filename=file_obj.name,
+                        file_type=content_type,
+                        size=file_size,
+                        file_hash=file_hash,
+                        is_duplicate=False,  # Not a duplicate
+                        reference_count=1,   # Initial reference count
+                        version=highest_version + 1
+                    )
+                    new_file.save()
+                    
+                    serializer = self.get_serializer(new_file)
+                    return Response(serializer.data, status=status.HTTP_201_CREATED)
+                    
+        except Exception as e:
+            logger.error(f"Unhandled exception in file upload: {str(e)}")
+            return Response(
+                {'error': f'An unexpected error occurred during file upload: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            try:
+                file_obj = request.FILES.get('file')
+                if not file_obj:
+                    return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Make sure file is at the beginning
+                file_obj.seek(0)
+                
                 try:
-                    with transaction.atomic():
-                        existing_file.reference_count = existing_file.reference_count + 1
-                        existing_file.save()
+                    file_hash = compute_file_hash(file_obj)
+                    # Reset file pointer to beginning after hash calculation
+                    file_obj.seek(0)
+                except Exception as e:
+                    logger.error(f"Error computing file hash: {str(e)}")
+                    return Response(
+                        {'error': f'Error processing file: {str(e)}'},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
+                
+                # Get content type, with fallback
+                content_type = getattr(file_obj, 'content_type', 'application/octet-stream')
+                
+                # Get file size with error handling
+                try:
+                    file_size = file_obj.size
+                except AttributeError:
+                    file_size = 0
+                    logger.warning("Could not determine file size, defaulting to 0")
+                
+                # Check for existing file outside transaction
+                existing_file = None
+                try:
+                    existing_file = File.objects.filter(file_hash=file_hash, is_duplicate=False).first()
                 except OperationalError as e:
                     if "database is locked" in str(e).lower():
-                        # Retry after short delay
-                        time.sleep(0.5)
-                        with transaction.atomic():
-                            # Refetch to avoid stale data
-                            existing_file = File.objects.get(pk=existing_file.pk)
-                            existing_file.reference_count = existing_file.reference_count + 1
-                            existing_file.save()
+                        logger.warning("Database locked during duplicate check, retrying with delay")
+                        time.sleep(0.5)  # Wait briefly and retry
+                        existing_file = File.objects.filter(file_hash=file_hash, is_duplicate=False).first()
                     else:
                         raise
                 
-                # Get highest version in separate transaction
+                # Get highest version
                 highest_version = 0
                 try:
                     highest_version = File.objects.filter(
@@ -155,24 +248,27 @@ class FileViewSet(viewsets.ModelViewSet):
                     # If we can't get the version, just default to 0
                     pass
                 
-                # Create duplicate record in separate transaction
-                try:
-                    with transaction.atomic():
-                        new_file = File(
-                            file=existing_file.file,
-                            original_filename=file_obj.name,
-                            file_type=content_type,
-                            size=file_size,
-                            file_hash=file_hash,
-                            is_duplicate=True,
-                            original_file=existing_file,
-                            version=highest_version + 1
-                        )
-                        new_file.save()
-                except OperationalError as e:
-                    if "database is locked" in str(e).lower():
-                        # Retry after short delay
-                        time.sleep(1.0)
+                # Use smaller transactions
+                if existing_file:
+                    # Handle duplicate file case
+                    try:
+                        with transaction.atomic():
+                            existing_file.reference_count = existing_file.reference_count + 1
+                            existing_file.save()
+                    except OperationalError as e:
+                        if "database is locked" in str(e).lower():
+                            # Retry after short delay
+                            time.sleep(0.5)
+                            with transaction.atomic():
+                                # Refetch to avoid stale data
+                                existing_file = File.objects.get(pk=existing_file.pk)
+                                existing_file.reference_count = existing_file.reference_count + 1
+                                existing_file.save()
+                        else:
+                            raise
+                    
+                    # Create duplicate record in separate transaction
+                    try:
                         with transaction.atomic():
                             new_file = File(
                                 file=existing_file.file,
@@ -185,72 +281,80 @@ class FileViewSet(viewsets.ModelViewSet):
                                 version=highest_version + 1
                             )
                             new_file.save()
-                    else:
-                        logger.error(f"Database error creating duplicate file record: {str(e)}")
-                        return Response(
-                            {'error': f'Database error while saving file: {str(e)}'},
-                            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                        )
-                
-                serializer = self.get_serializer(new_file)
-                data = serializer.data
-                data['duplicate_detected'] = True
-                
-                headers = self.get_success_headers(serializer.data)
-                return Response(data, status=status.HTTP_201_CREATED, headers=headers)
-            else:
-                # Handle new file case
-                highest_version = 0
-                try:
-                    highest_version = File.objects.filter(
-                        original_filename=file_obj.name
-                    ).order_by('-version').values_list('version', flat=True).first() or 0
-                except OperationalError:
-                    # If we can't get the version, just default to 0
-                    pass
-                
-                # Create new file record in a retrying transaction
-                max_retries = 3
-                retry_count = 0
-                while retry_count < max_retries:
-                    try:
-                        with transaction.atomic():
-                            new_file = File(
-                                file=file_obj,
-                                original_filename=file_obj.name,
-                                file_type=content_type,
-                                size=file_size,
-                                file_hash=file_hash,
-                                is_duplicate=False,
-                                version=highest_version + 1
-                            )
-                            new_file.save()
-                            break  # Exit the retry loop on success
                     except OperationalError as e:
-                        if "database is locked" in str(e).lower() and retry_count < max_retries - 1:
-                            retry_count += 1
-                            sleep_time = 0.5 * (2 ** retry_count)  # Exponential backoff
-                            logger.warning(f"Database locked, retrying in {sleep_time} seconds (attempt {retry_count+1}/{max_retries})")
-                            time.sleep(sleep_time)
-                            continue
+                        if "database is locked" in str(e).lower():
+                            # Retry after short delay
+                            time.sleep(1.0)
+                            with transaction.atomic():
+                                new_file = File(
+                                    file=existing_file.file,
+                                    original_filename=file_obj.name,
+                                    file_type=content_type,
+                                    size=file_size,
+                                    file_hash=file_hash,
+                                    is_duplicate=True,
+                                    original_file=existing_file,
+                                    version=highest_version + 1
+                                )
+                                new_file.save()
                         else:
-                            logger.error(f"Failed to save file after {max_retries} attempts: {str(e)}")
+                            logger.error(f"Database error creating duplicate file record: {str(e)}")
                             return Response(
-                                {'error': f'Database is currently busy. Please try again in a moment.'},
-                                status=status.HTTP_503_SERVICE_UNAVAILABLE
+                                {'error': f'Database error while saving file: {str(e)}'},
+                                status=status.HTTP_500_INTERNAL_SERVER_ERROR
                             )
-                
-                serializer = self.get_serializer(new_file)
-                headers = self.get_success_headers(serializer.data)
-                return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
-                
-        except Exception as e:
-            logger.error(f"Unhandled exception in file upload: {str(e)}")
-            return Response(
-                {'error': f'An unexpected error occurred during file upload: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
+                    
+                    serializer = self.get_serializer(new_file)
+                    data = serializer.data
+                    data['duplicate_detected'] = True
+                    
+                    headers = self.get_success_headers(serializer.data)
+                    return Response(data, status=status.HTTP_201_CREATED, headers=headers)
+                else:
+                    # Handle new file case - first time this file is uploaded
+                    # Create new file record in a retrying transaction
+                    max_retries = 3
+                    retry_count = 0
+                    while retry_count < max_retries:
+                        try:
+                            with transaction.atomic():
+                                new_file = File(
+                                    file=file_obj,
+                                    original_filename=file_obj.name,
+                                    file_type=content_type,
+                                    size=file_size,
+                                    file_hash=file_hash,
+                                    is_duplicate=False,
+                                    version=highest_version + 1,
+                                    reference_count=1  # Initialize with reference count of 1
+                                )
+                                new_file.save()
+                                break  # Exit the retry loop on success
+                        except OperationalError as e:
+                            if "database is locked" in str(e).lower() and retry_count < max_retries - 1:
+                                retry_count += 1
+                                sleep_time = 0.5 * (2 ** retry_count)  # Exponential backoff
+                                logger.warning(f"Database locked, retrying in {sleep_time} seconds (attempt {retry_count+1}/{max_retries})")
+                                time.sleep(sleep_time)
+                                continue
+                            else:
+                                logger.error(f"Failed to save file after {max_retries} attempts: {str(e)}")
+                                return Response(
+                                    {'error': f'Database is currently busy. Please try again in a moment.'},
+                                    status=status.HTTP_503_SERVICE_UNAVAILABLE
+                                )
+                    
+                    serializer = self.get_serializer(new_file)
+                    headers = self.get_success_headers(serializer.data)
+                    return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+                    
+            except Exception as e:
+                logger.error(f"Unhandled exception in file upload: {str(e)}")
+                return Response(
+                    {'error': f'An unexpected error occurred during file upload: {str(e)}'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
     @action(detail=False, methods=['get'])
     def stats(self, request):
         try:
