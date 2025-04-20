@@ -1,4 +1,3 @@
-// SearchPanel.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   FormField,
@@ -11,7 +10,6 @@ import {
   DatePicker,
   Container,
   ExpandableSection,
-  Toggle
 } from '@cloudscape-design/components';
 import { FileFilters } from '../services/fileService';
 
@@ -44,7 +42,6 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, initialFilte
   const [maxSize, setMaxSize] = useState<string>(initialFilters?.maxSize ? String(initialFilters.maxSize / 1024) : '');
   const [startDate, setStartDate] = useState<DateValue | null>(initialFilters?.startDate ? { value: initialFilters.startDate } : null);
   const [endDate, setEndDate] = useState<DateValue | null>(initialFilters?.endDate ? { value: initialFilters.endDate } : null);
-  const [hardFilter, setHardFilter] = useState<boolean>(initialFilters?.hardFilter || false);
 
   const fileTypeOptions: FileTypeOption[] = [
     { label: 'PDF Document', value: 'application/pdf' },
@@ -58,37 +55,24 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ onSearch, initialFilte
     { label: 'MP4 Video', value: 'video/mp4' }
   ];
 
-// In the handleSearch function
-const handleSearch = useCallback(() => {
-  const filters: FileFilters = {
-    searchQuery,
-    fileTypes: selectedFileTypes.map(item => {
-      // When hard filter is true, we want exact matches only
-      if (hardFilter) {
-        return item.value; // Send the full MIME type for exact matching
-      } else {
-        // For non-hard filter, we're more flexible - extract the subtype
-        // e.g., "application/pdf" → "pdf" or send the full thing if no "/" is found
-        const parts = item.value.split('/');
-        return parts.length > 1 ? parts[1] : item.value;
-      }
-    }),
-    minSize: minSize ? parseInt(minSize) * 1024 : null, 
-    maxSize: maxSize ? parseInt(maxSize) * 1024 : null, 
-    startDate: startDate?.value || null,
-    endDate: endDate?.value || null,
-    hardFilter,
-    unique_only: initialFilters?.unique_only || false
-  };
-  
-  onSearch(filters);
-}, [searchQuery, selectedFileTypes, minSize, maxSize, startDate, endDate, hardFilter, onSearch, initialFilters?.unique_only]);
-  // Apply filters whenever they change
+  const handleSearch = useCallback(() => {
+    const filters: FileFilters = {
+      searchQuery,
+      fileTypes: selectedFileTypes.map(item => item.value),
+      minSize: minSize ? parseInt(minSize) * 1024 : null, 
+      maxSize: maxSize ? parseInt(maxSize) * 1024 : null, 
+      startDate: startDate?.value || null,
+      endDate: endDate?.value || null,
+      unique_only: initialFilters?.unique_only || false
+    };
+    
+    onSearch(filters);
+  }, [searchQuery, selectedFileTypes, minSize, maxSize, startDate, endDate, onSearch, initialFilters?.unique_only]);
+
   useEffect(() => {
     handleSearch();
-  }, [searchQuery, selectedFileTypes, minSize, maxSize, startDate, endDate, hardFilter, handleSearch]);
+  }, [searchQuery, selectedFileTypes, minSize, maxSize, startDate, endDate, handleSearch]);
 
-  // Update local state if initialFilters change
   useEffect(() => {
     if (initialFilters) {
       if (initialFilters.searchQuery !== undefined) setSearchQuery(initialFilters.searchQuery);
@@ -98,7 +82,6 @@ const handleSearch = useCallback(() => {
         setMaxSize(String(initialFilters.maxSize / 1024));
       if (initialFilters.startDate) setStartDate({ value: initialFilters.startDate });
       if (initialFilters.endDate) setEndDate({ value: initialFilters.endDate });
-      if (initialFilters.hardFilter !== undefined) setHardFilter(initialFilters.hardFilter);
       
       if (initialFilters.fileTypes?.length) {
         const newSelectedTypes = initialFilters.fileTypes.map(type => {
@@ -117,7 +100,16 @@ const handleSearch = useCallback(() => {
     setMaxSize('');
     setStartDate(null);
     setEndDate(null);
-    setHardFilter(false);
+    
+    onSearch({
+      searchQuery: '',
+      fileTypes: [],
+      minSize: null,
+      maxSize: null,
+      startDate: null,
+      endDate: null,
+      unique_only: initialFilters?.unique_only || false
+    });
   };
 
   return (
@@ -141,20 +133,12 @@ const handleSearch = useCallback(() => {
         <ExpandableSection headerText="Advanced filters">
           <SpaceBetween size="l">
             <FormField label="File type">
-              <SpaceBetween direction="vertical" size="s">
-                <Multiselect
-                  selectedOptions={selectedFileTypes}
-                  onChange={({ detail }) => setSelectedFileTypes(detail.selectedOptions as FileTypeOption[])}
-                  options={fileTypeOptions}
-                  placeholder="Select file types"
-                />
-                <Toggle
-                  onChange={({ detail }) => setHardFilter(detail.checked)}
-                  checked={hardFilter}
-                >
-                  Hard filter (exact match only)
-                </Toggle>
-              </SpaceBetween>
+              <Multiselect
+                selectedOptions={selectedFileTypes}
+                onChange={({ detail }) => setSelectedFileTypes(detail.selectedOptions as FileTypeOption[])}
+                options={fileTypeOptions}
+                placeholder="Select file types"
+              />
             </FormField>
             
             <Grid gridDefinition={[{ colspan: 6 }, { colspan: 6 }]}>

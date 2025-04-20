@@ -1,11 +1,8 @@
 import axios from 'axios';
-
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
-
 const api = axios.create({
   baseURL: API_URL,
 });
-
 export interface FileItem {
   id: string;
   file: string;
@@ -20,7 +17,6 @@ export interface FileItem {
   version: number;
   duplicate_detected?: boolean;
 }
-
 export interface FileStats {
   total_files: number;
   unique_files: number;
@@ -29,7 +25,6 @@ export interface FileStats {
   storage_saved: number;
   storage_efficiency: string;
 }
-
 export interface FileFilters {
   searchQuery?: string;
   fileTypes?: string[];
@@ -38,64 +33,49 @@ export interface FileFilters {
   startDate?: string | null;
   endDate?: string | null;
   unique_only?: boolean;
-  hardFilter?: boolean;
 }
-
 export interface DownloadParams {
   fileUrl: string;
   filename: string;
 }
-
 export interface UploadResponse extends FileItem {
   duplicate_detected?: boolean;
 }
-
 export const fileService = {
-  // Get files with filtering
   getFiles: async (filters: FileFilters): Promise<FileItem[]> => {
     const params: Record<string, any> = {};
-    
     if (filters?.searchQuery) {
       params.search = filters.searchQuery;
     }
-    
     if (filters?.fileTypes && filters.fileTypes.length > 0) {
       params.file_type = filters.fileTypes;
     }
-    
     if (filters?.minSize !== null && filters?.minSize !== undefined) {
       params.min_size = filters.minSize;
     }
-    
     if (filters?.maxSize !== null && filters?.maxSize !== undefined) {
       params.max_size = filters.maxSize;
     }
-    
     if (filters?.startDate) {
       params.start_date = filters.startDate;
     }
-    
     if (filters?.endDate) {
       params.end_date = filters.endDate;
     }
-    
-    if (filters?.unique_only) {
-      params.unique_only = true;
+    if (filters?.unique_only !== undefined) {
+      params.unique_only = filters.unique_only;
     }
-    
-    if (filters?.hardFilter) {
-      params.hard_filter = true;
-    }
-    
-    const response = await api.get('/files/', { params });
+    const response = await api.get('/files/', {
+      params,
+      paramsSerializer: {
+        indexes: null
+      }
+    });
     return response.data;
   },
-
-  // Upload a file
   uploadFile: async (file: File): Promise<UploadResponse> => {
     const formData = new FormData();
     formData.append('file', file);
-    
     const response = await api.post('/files/', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
@@ -103,19 +83,14 @@ export const fileService = {
     });
     return response.data;
   },
-
-  // Delete a file
   deleteFile: async (id: string): Promise<string> => {
     await api.delete(`/files/${id}/`);
     return id;
   },
-
-  // Download a file
   downloadFile: async (fileUrl: string, filename: string): Promise<DownloadParams> => {
     const response = await axios.get(fileUrl, {
       responseType: 'blob',
     });
-    
     const url = window.URL.createObjectURL(new Blob([response.data]));
     const link = document.createElement('a');
     link.href = url;
@@ -123,11 +98,8 @@ export const fileService = {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    
     return { fileUrl, filename };
   },
-
-  // Get file statistics
   getFileStats: async (): Promise<FileStats> => {
     const response = await api.get('/files/stats/');
     return response.data;
