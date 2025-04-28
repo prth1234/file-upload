@@ -8,15 +8,12 @@ A full-stack file management application built with React and Django, designed f
 - Django 4.x (Python web framework)
 - Django REST Framework (API development)
 - SQLite (Development database)
-- Gunicorn (WSGI HTTP Server)
-- WhiteNoise (Static file serving)
 
 ### Frontend
 - React 18 with TypeScript
 - TanStack Query (React Query) for data fetching
 - Axios for API communication
 - Tailwind CSS for styling
-- Heroicons for UI elements
 
 ### Infrastructure
 - Docker and Docker Compose
