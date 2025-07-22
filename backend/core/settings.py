@@ -55,6 +55,7 @@ MIDDLEWARE = [
   "django.contrib.auth.middleware.AuthenticationMiddleware",
   "django.contrib.messages.middleware.MessageMiddleware",
   "django.middleware.clickjacking.XFrameOptionsMiddleware",
+  "core.middleware.AllowIframeForMediaMiddleware",  # This should come AFTER
 ]
 
 ROOT_URLCONF = "core.urls"
@@ -87,7 +88,8 @@ DATABASES = {
         'NAME': BASE_DIR / 'db.sqlite3',  # Make sure this path is correct
     }
 }
-
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators

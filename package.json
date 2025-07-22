@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "@pdf-viewer/react": "^1.7.4",
+    "@syncfusion/ej2-react-pdfviewer": "^30.1.41",
+    "pdfjs-dist": "^5.3.93"
+  },
+  "devDependencies": {
+    "@types/pdfjs-dist": "^2.10.377"
+  }
+}
