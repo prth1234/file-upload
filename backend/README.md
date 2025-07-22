@@ -44,13 +44,13 @@ Django-based backend for the File Hub application, providing a robust API for fi
 4. **Database Setup**
    ```bash
    python manage.py migrate
-   python manage.py createsuperuser
+   python3 manage.py createsuperuser
    ```
    Note: SQLite database will be automatically created at `db.sqlite3`
 
 5. **Run Development Server**
    ```bash
-   python manage.py runserver
+   python3 manage.py runserver
    ```
    Access the API at http://localhost:8000/api
 

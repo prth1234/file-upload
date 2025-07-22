@@ -5,6 +5,19 @@ const api = axios.create({
   baseURL: API_URL,
 });
 
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers['Authorization'] = `Token ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 export interface FileItem {
   id: string;
   file: string;
@@ -55,6 +68,13 @@ export interface DuplicatesResponse {
 }
 
 export const fileService = {
+  login: async (credentials: { username?: string; password?: string }): Promise<string> => {
+    const response = await api.post('/../api-token-auth/', credentials);
+    const token = response.data.token;
+    localStorage.setItem('token', token);
+    return token;
+  },
+
   getFiles: async (filters: FileFilters): Promise<FileItem[]> => {
     const params: Record<string, any> = {};
     if (filters?.searchQuery) {
