@@ -18,9 +18,11 @@ import { FileList } from './components/FileList';
 import { FileStats } from './components/FileStats';
 import { SearchPanel } from './components/SearchPanel';
 import { FileFilters } from './services/fileService';
+import Login from './components/Login';
 import './styles.css';
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [refreshKey, setRefreshKey] = useState<number>(0);
   const [activeTabId, setActiveTabId] = useState<string>(() => {
     return localStorage.getItem('activeTab') || 'files';
@@ -45,6 +47,10 @@ function App() {
 
   // Save dark mode preference to localStorage and apply to body class
   useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      setIsAuthenticated(true);
+    }
     localStorage.setItem('darkMode', darkMode.toString());
     if (darkMode) {
       document.body.classList.add('awsui-dark-mode');
@@ -129,4 +135,21 @@ function App() {
   );
 }
 
-export default App;
+function AuthApp() {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  if (!isAuthenticated) {
+    return <Login />;
+  }
+
+  return <App />;
+}
+
+export default AuthApp;
