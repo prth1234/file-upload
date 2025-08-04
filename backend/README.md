@@ -24,13 +24,13 @@ Django-based backend for the File Hub application, providing a robust API for fi
 
 1. **Create and activate virtual environment**
    ```bash
-   python -m venv venv
+   python3 -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 
 2. **Install Dependencies**
    ```bash
-   pip install -r requirements.txt
+   pip3 install -r requirements.txt
    ```
 
 3. **Environment Setup**
@@ -43,7 +43,7 @@ Django-based backend for the File Hub application, providing a robust API for fi
 
 4. **Database Setup**
    ```bash
-   python manage.py migrate
+   python3 manage.py migrate
    python3 manage.py createsuperuser
    ```
    Note: SQLite database will be automatically created at `db.sqlite3`

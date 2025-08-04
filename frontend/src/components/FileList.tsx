@@ -14,6 +14,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fileService, FileItem, FileFilters } from '../services/fileService';
 import { TbDatabaseSearch } from "react-icons/tb";
+import { PdfPreview } from './PdfPreview';
 
 interface FileListProps {
   filters: FileFilters;
@@ -27,6 +28,8 @@ export const FileList: React.FC<FileListProps> = ({ filters, onFiltersChange }) 
   const [showUniqueOnly, setShowUniqueOnly] = useState<boolean>(false);
   const [showDuplicatesModal, setShowDuplicatesModal] = useState<boolean>(false);
   const [selectedOriginalFile, setSelectedOriginalFile] = useState<string | null>(null);
+  const [showPreviewModal, setShowPreviewModal] = useState<boolean>(false);
+  const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
   const pageSize = 10;
 
   const updatedFilters = {
@@ -103,6 +106,11 @@ export const FileList: React.FC<FileListProps> = ({ filters, onFiltersChange }) 
   const handleViewDuplicates = (fileId: string) => {
     setSelectedOriginalFile(fileId);
     setShowDuplicatesModal(true);
+  };
+
+  const handlePreviewFile = (file: FileItem) => {
+    setPreviewFile(file);
+    setShowPreviewModal(true);
   };
 
   const formatFileSize = (bytes: number): string => {
@@ -226,6 +234,15 @@ export const FileList: React.FC<FileListProps> = ({ filters, onFiltersChange }) 
                       ariaLabel="View duplicates"
                     />
                   )}
+                  <Button
+                    onClick={() => {
+                      setPreviewFile(item);
+                      setShowPreviewModal(true);
+                    }}
+                    iconName="zoom-to-fit"
+                    variant="icon"
+                    ariaLabel="Preview"
+                  />
                 </SpaceBetween>
               )
             }
@@ -374,6 +391,54 @@ export const FileList: React.FC<FileListProps> = ({ filters, onFiltersChange }) 
             <Box textAlign="center" padding="l">
               No duplicate information available.
             </Box>
+          )}
+        </Box>
+      </Modal>
+
+      {/* Modal for file preview */}
+      <Modal
+        visible={showPreviewModal}
+        onDismiss={() => {
+          setShowPreviewModal(false);
+          setPreviewFile(null);
+        }}
+        header={`Preview: ${previewFile?.original_filename || ''}`}
+        size="large"
+      >
+        <Box textAlign="center" padding="l">
+          {previewFile ? (
+            <>
+              {previewFile.file_type.startsWith('image/') ? (
+                <img
+                  src={previewFile.file}
+                  alt={previewFile.original_filename}
+                  style={{ maxWidth: '100%', maxHeight: '60vh', borderRadius: '8px' }}
+                />
+              ) : previewFile.file_type === 'application/pdf' ? (
+                <PdfPreview url={previewFile.file} width={600} height={800} />
+              ) : (
+                <Box variant="p">Preview not available for this file type.</Box>
+              )}
+              <Box margin={{ top: "m" }}>
+                <a
+                  href={previewFile.file}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: "#0073bb",
+                    textDecoration: "underline",
+                    fontWeight: 500,
+                    fontSize: "16px",
+                    display: "inline-block",
+                    marginTop: "12px"
+                  }}
+                >
+                  If preview is not available, you can access the resource here.
+                </a>
+              </Box>
+            </>
+          ) : (
+            <StatusIndicator type="loading">Loading preview...</StatusIndicator>
           )}
         </Box>
       </Modal>

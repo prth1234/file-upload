@@ -2,6 +2,8 @@ from django.db import models
 import uuid
 import os
 import hashlib
+import io
+from cryptography.fernet import Fernet
 
 def file_upload_path(instance, filename):
     """Generate file path for new file upload"""
@@ -10,11 +12,21 @@ def file_upload_path(instance, filename):
     return os.path.join('uploads', filename)
 
 def compute_file_hash(file):
-    """Compute MD5 hash of a file"""
-    md5 = hashlib.md5()
+    """Compute SHA-256 hash of a file"""
+    sha256 = hashlib.sha256()
     for chunk in file.chunks():
-        md5.update(chunk)
-    return md5.hexdigest()
+        sha256.update(chunk)
+    return sha256.hexdigest()
+
+# Store this key securely! For demo, you can hardcode, but use env vars in production.
+FERNET_KEY = os.environ.get('FERNET_KEY', Fernet.generate_key())
+fernet = Fernet(FERNET_KEY)
+
+def encrypt_data(data: bytes) -> bytes:
+    return fernet.encrypt(data)
+
+def decrypt_data(data: bytes) -> bytes:
+    return fernet.decrypt(data)
 
 class File(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -46,9 +58,26 @@ class File(models.Model):
     def __str__(self):
         return f"{self.original_filename} (v{self.version})"
     
-    @property
-    def storage_saved(self):
-        """Calculate storage saved if this is an original file with duplicates"""
-        if not self.is_duplicate and self.reference_count > 1:
-            return self.size * (self.reference_count - 1)
-        return 0
+    def save(self, *args, **kwargs):
+        # Hash the file before saving
+        if self.file and not self.file_hash:
+            self.file_hash = compute_file_hash(self.file)
+        
+        # Encrypt file before saving
+        if self.file and not getattr(self, '_encrypted', False):
+            self.file.seek(0)
+            original_data = self.file.read()
+            encrypted_data = encrypt_data(original_data)
+            # Replace file content with encrypted data
+            self.file.seek(0)
+            self.file.file = io.BytesIO(encrypted_data)
+            self.size = len(encrypted_data)
+            self._encrypted = True  # Prevent double encryption
+
+        super().save(*args, **kwargs)
+
+    def get_decrypted_file(self):
+        """Return decrypted file content as bytes"""
+        self.file.seek(0)
+        encrypted_data = self.file.read()
+        return decrypt_data(encrypted_data)
